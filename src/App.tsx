@@ -13,29 +13,41 @@ interface Line {
   text: string;
 }
 
-const commandHandlers = (command: string): string[] | null => {
+const BIRTHDAY_MESSAGE: string[] = [
+  'Dear Maxim,',
+  ' ',
+  'Happy 30th birthday! 🎉',
+  'May this year bring you exciting projects, fresh ideas,',
+  'and plenty of time to enjoy the things you love.',
+  ' ',
+  'May your code compile on the first try, your servers stay green,',
+  'and your coffee cup never be empty.',
+  ' ',
+  'Wishing you lots of joy, health and success,',
+  'Your family <3.',
+];
+
+const handleGenericCommand = (command: string): string[] => {
   const cmd = command.trim();
 
-  if (!cmd) return [''];
-
-  if (cmd === 'clear') {
-    return null;
-  }
-
   switch (cmd) {
+    case '':
+      return [''];
     case 'help':
       return [
-        'Comenzi simulate:',
-        '  help        - lista de comenzi disponibile',
-        '  ls          - listează directoare uzuale',
-        '  pwd         - afișează directorul curent',
-        '  whoami      - afișează utilizatorul curent',
-        '  date        - afișează data curentă',
-        '  uname -a    - afișează informații de sistem',
-        '  clear       - curăță ecranul terminalului',
+        'Simulated commands:',
+        '  help        - show this help message',
+        '  ls          - list some common directories',
+        '  pwd         - print working directory',
+        '  whoami      - print current user',
+        '  date        - print current date and time',
+        '  uname -a    - print system information',
+        '  clear       - clear the terminal screen',
       ];
     case 'ls':
-      return ['Desktop  Documents  Downloads  Music  Pictures  Videos'];
+      return [
+        'Desktop  Documents  Downloads  Music  Pictures  Videos  gift_for_maxim.txt',
+      ];
     case 'pwd':
       return ['/home/mark'];
     case 'whoami':
@@ -44,6 +56,9 @@ const commandHandlers = (command: string): string[] | null => {
       return [new Date().toString()];
     case 'uname -a':
       return ['Linux linux-desktop 5.15.0-Ubuntu #1 SMP x86_64 GNU/Linux'];
+    case 'cat gift_for_maxim.txt':
+      // handled specially (clear + show file), but keep a fallback
+      return BIRTHDAY_MESSAGE;
     default:
       return [`bash: ${cmd}: command not found`];
   }
@@ -58,39 +73,60 @@ function App() {
     },
   ]);
   const [inputValue, setInputValue] = useState<string>('');
-  const [lineId, setLineId] = useState<number>(1);
+  const [isIntroRunning, setIsIntroRunning] = useState<boolean>(false);
 
+  const nextIdRef = useRef<number>(1);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  const appendCommandWithOutput = (
+    command: string,
+    outputLines: string[],
+    options?: { clearBefore?: boolean }
+  ) => {
+    setLines((prev) => {
+      const base: Line[] = options?.clearBefore ? [] : prev;
+      const created: Line[] = [];
+
+      created.push({
+        id: nextIdRef.current++,
+        type: 'command',
+        text: command.trim(),
+      });
+
+      outputLines.forEach((text) => {
+        created.push({
+          id: nextIdRef.current++,
+          type: 'output',
+          text,
+        });
+      });
+
+      return [...base, ...created];
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isIntroRunning) return;
+
     const trimmed = inputValue.trim();
 
-    const commandLine: Line = {
-      id: lineId,
-      type: 'command',
-      text: trimmed,
-    };
-
-    const result = commandHandlers(trimmed);
-
-    if (result === null) {
+    if (trimmed === 'clear') {
       setLines([]);
       setInputValue('');
-      setLineId((prev) => prev + 1);
       return;
     }
 
-    const outputLines: Line[] = result.map((text, index) => ({
-      id: lineId + index + 1,
-      type: 'output',
-      text,
-    }));
+    if (trimmed === 'cat gift_for_maxim.txt') {
+      appendCommandWithOutput(trimmed, BIRTHDAY_MESSAGE, { clearBefore: true });
+      setInputValue('');
+      return;
+    }
 
-    setLines((prev) => [...prev, commandLine, ...outputLines]);
+    const output = handleGenericCommand(trimmed);
+    appendCommandWithOutput(trimmed, output);
     setInputValue('');
-    setLineId((prev) => prev + 1 + outputLines.length);
   };
 
   useEffect(() => {
@@ -101,6 +137,59 @@ function App() {
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    const typeText = async (text: string) => {
+      setInputValue('');
+      for (let i = 0; i < text.length; i++) {
+        if (cancelled) return;
+        await sleep(120);
+        setInputValue((prev) => prev + text[i]);
+      }
+    };
+
+    const runIntro = async () => {
+      setIsIntroRunning(true);
+      await sleep(700);
+      if (cancelled) return;
+
+      // Step 1: type "ls"
+      await typeText('ls');
+      if (cancelled) return;
+
+      await sleep(400);
+      appendCommandWithOutput('ls', [
+        'Desktop  Documents  Downloads  Music  Pictures  Videos  gift_for_maxim.txt',
+      ]);
+
+      await sleep(1400);
+      if (cancelled) return;
+
+      // Step 2: type "cat gift_for_maxim.txt"
+      await typeText('cat gift_for_maxim.txt');
+      if (cancelled) return;
+
+      await sleep(400);
+      appendCommandWithOutput('cat gift_for_maxim.txt', BIRTHDAY_MESSAGE, {
+        clearBefore: true,
+      });
+
+      await sleep(600);
+      setInputValue('');
+      setIsIntroRunning(false);
+    };
+
+    runIntro();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -155,6 +244,7 @@ function App() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 autoComplete="off"
+                disabled={isIntroRunning}
               />
             </form>
           </div>
